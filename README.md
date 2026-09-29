@@ -1,57 +1,24 @@
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="/program_info/org.prismlauncher.PrismLauncher.svg">
-  <source media="(prefers-color-scheme: light)" srcset="/program_info/org.prismlauncher.PrismLauncher.svg">
-  <img alt="PeaksLauncher barrier block logo" src="/program_info/org.prismlauncher.PrismLauncher.svg" width="20%">
-</picture>
+  <img alt="PeaksLauncher barrier block logo" src="/program_info/io.github.Peaks2000.PeaksLauncher.svg" width="20%">
 </p>
 
-<p align="center">
-  PeaksLauncher is a fork of Prism Launcher for managing multiple Minecraft installations.<br />
-  <br />It is not endorsed by or affiliated with the Prism Launcher project or MultiMC.
-</p>
+# PeaksLauncher
+
+PeaksLauncher is a fork of [Prism Launcher](https://github.com/PrismLauncher/PrismLauncher) for managing Minecraft instances. It adds a **Syncing** settings page: enable sharing of `options.txt` between instances, or choose an instance whose options the others inherit when launched. The barrier block over the Prism logo is a joke about keeping instance settings under control.
+
+This project is not endorsed by or affiliated with the Prism Launcher project or MultiMC.
 
 ## Installation
 
-- Upstream Prism Launcher downloads and instructions are on the [Prism Launcher website](https://prismlauncher.org/download). Those builds do not include PeaksLauncher changes.
-- Last build status can be found in the [GitHub Actions](https://github.com/PrismLauncher/PrismLauncher/actions) tab (this also includes the pull requests status).
+Download the RPM or DEB from [PeaksLauncher releases](https://github.com/Peaks2000/PeaksLauncher/releases). The package installs as `peakslauncher` with its own configuration and data directory, so it can coexist with Prism Launcher.
 
-<p align="center">
-<a href="https://repology.org/project/prismlauncher/versions">
-    <img src="https://repology.org/badge/vertical-allrepos/prismlauncher.svg?columns=3" alt="Packaging status">
-</a>
-</p>
+This fork does not have its own Microsoft or CurseForge API credentials. Those services are unavailable in the published packages until fork-specific credentials are configured. See `CMakeLists.txt` if building your own copy.
 
-### Development Builds
+## Building
 
-Please understand that these builds are not intended for most users. There may be bugs, and other instabilities. You have been warned.
+Follow the [upstream build instructions](https://prismlauncher.org/wiki/development/build-instructions) with this repository as the source. Linux builds use CMake and Qt 6. The Debian build dependency list is in [`packaging/Dockerfile.deb`](packaging/Dockerfile.deb).
 
-There are development builds available through:
-
-- [GitHub Actions](https://github.com/PrismLauncher/PrismLauncher/actions) (includes builds from pull requests opened by contributors)
-- [nightly.link](https://prismlauncher.org/nightly) (this will always point only to the latest version of develop)
-
-These have debug information in the binaries, so their file sizes are relatively larger.
-
-Prebuilt Development builds are provided for **Linux**, **Windows** and **macOS**.
-
-On Linux, we also offer our own [Flatpak nightly repository](https://github.com/PrismLauncher/flatpak). Most software centers are able to install it by opening [this link](https://flatpak.prismlauncher.org/prismlauncher-nightly.flatpakref).
-
-## Community & Support
-
-Feel free to create a GitHub issue if you find a bug or want to suggest a new feature. We have multiple community spaces where other community members can help you:
-
-- **Our Discord server:**
-
-[![Prism Launcher Discord server](https://discordapp.com/api/guilds/1031648380885147709/widget.png?style=banner3)](https://prismlauncher.org/discord)
-
-- **Our Matrix space:**
-
-[![Prism Launcher Space](https://img.shields.io/matrix/prismlauncher:matrix.org?style=for-the-badge&label=Matrix%20Space&logo=matrix&color=purple)](https://prismlauncher.org/matrix)
-
-- **Our Subreddit:**
-
-[![r/PrismLauncher](https://img.shields.io/reddit/subreddit-subscribers/prismlauncher?style=for-the-badge&logo=reddit)](https://prismlauncher.org/reddit)
+For project issues, use the [PeaksLauncher issue tracker](https://github.com/Peaks2000/PeaksLauncher/issues).
 
 ## Translations
 
@@ -61,13 +28,13 @@ The translation effort for Prism Launcher is hosted on [Weblate](https://hosted.
 
 If you want to build Prism Launcher yourself, check the [build instructions](https://prismlauncher.org/wiki/development/build-instructions).
 
-## Sponsors & Partners
+## Upstream sponsors and partners
 
-We thank all the wonderful backers over at Open Collective! Support Prism Launcher by [becoming a backer](https://opencollective.com/prismlauncher).
+Prism Launcher thanks its backers at Open Collective. Support the upstream project by [becoming a backer](https://opencollective.com/prismlauncher).
 
 [![OpenCollective Backers](https://opencollective.com/prismlauncher/backers.svg?width=890&limit=1000)](https://opencollective.com/prismlauncher#backers)
 
-Thanks to JetBrains for providing us a few licenses for all their products, as part of their [Open Source program](https://www.jetbrains.com/opensource/).
+The upstream project acknowledges JetBrains for support through its [Open Source program](https://www.jetbrains.com/opensource/).
 
 <a href="https://jb.gg/OpenSource">
 <picture>
@@ -77,17 +44,17 @@ Thanks to JetBrains for providing us a few licenses for all their products, as p
 </picture>
 </a>
 
-Thanks to Weblate for hosting our translation efforts.
+The upstream project uses Weblate for translations.
 
 <a href="https://hosted.weblate.org/engage/prismlauncher/">
 <img src="https://hosted.weblate.org/widgets/prismlauncher/-/open-graph.png" alt="Translation status" width="300" />
 </a>
 
-Thanks to Netlify for providing us their excellent web services, as part of their [Open Source program](https://www.netlify.com/open-source/).
+The upstream project acknowledges Netlify for web hosting through its [Open Source program](https://www.netlify.com/open-source/).
 
 <a href="https://www.netlify.com"> <img src="https://www.netlify.com/v3/img/components/netlify-color-accent.svg" alt="Deploys by Netlify" /> </a>
 
-Thanks to the awesome people over at [MacStadium](https://www.macstadium.com/), for providing M1-Macs for development purposes!
+The upstream project acknowledges [MacStadium](https://www.macstadium.com/) for providing Macs for development.
 
 <a href="https://www.macstadium.com"><img src="https://uploads-ssl.webflow.com/5ac3c046c82724970fc60918/5c019d917bba312af7553b49_MacStadium-developerlogo.png" alt="Powered by MacStadium" width="300"></a>
 

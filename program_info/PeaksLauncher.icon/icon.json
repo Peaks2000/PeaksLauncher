@@ -1,0 +1,16 @@
+{
+  "color-space-for-untagged-svg-colors": "display-p3",
+  "fill": { "solid": "extended-gray:1.00000,1.00000" },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "block.svg",
+          "name": "PeaksLauncher barrier logo",
+          "position": { "scale": 19.28, "translation-in-points": [0, 0] }
+        }
+      ]
+    }
+  ],
+  "supported-platforms": { "squares": ["macOS"] }
+}

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>@Launcher_AppID@</id>
+  <name>PeaksLauncher</name>
+  <summary>A Minecraft launcher with game options syncing between instances</summary>
+  <developer id="io.github.peaks2000"><name>PeaksLauncher Contributors</name></developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>PeaksLauncher is a fork of Prism Launcher for managing Minecraft instances. It can share game options between instances or copy them from a chosen source instance.</p>
+  </description>
+  <url type="homepage">https://github.com/Peaks2000/PeaksLauncher</url>
+  <url type="bugtracker">https://github.com/Peaks2000/PeaksLauncher/issues</url>
+  <url type="vcs-browser">https://github.com/Peaks2000/PeaksLauncher</url>
+  <content_rating type="oars-1.1"/>
+  <launchable type="desktop-id">@Launcher_AppID@.desktop</launchable>
+</component>
