@@ -3,5 +3,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config git \
     extra-cmake-modules qt6-base-dev qt6-networkauth-dev qt6-svg-dev \
     cmark libcmark-dev libqrencode-dev libarchive-dev libtomlplusplus-dev zlib1g-dev libxkbcommon-dev \
-    dpkg-dev ca-certificates && \
+    dpkg-dev file ca-certificates && \
     rm -rf /var/lib/apt/lists/*
