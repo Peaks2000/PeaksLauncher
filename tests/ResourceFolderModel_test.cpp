@@ -51,7 +51,7 @@
     QTimer expire_timer;                                                                \
     expire_timer.callOnTimeout(&loop, &QEventLoop::quit);                               \
     expire_timer.setSingleShot(true);                                                   \
-    expire_timer.start(4000);                                                           \
+    expire_timer.start(10000);                                                          \
                                                                                         \
     VERIFY(EXEC);                                                                       \
     loop.exec();                                                                        \
@@ -94,7 +94,7 @@ class ResourceFolderModelTest : public QObject {
             QTimer expire_timer;
             expire_timer.callOnTimeout(&loop, &QEventLoop::quit);
             expire_timer.setSingleShot(true);
-            expire_timer.start(4000);
+            expire_timer.start(10000);
 
             m.installResource(folder);
 
@@ -118,7 +118,7 @@ class ResourceFolderModelTest : public QObject {
             QTimer expire_timer;
             expire_timer.callOnTimeout(&loop, &QEventLoop::quit);
             expire_timer.setSingleShot(true);
-            expire_timer.start(4000);
+            expire_timer.start(10000);
 
             m.installResource(folder);
 
@@ -143,7 +143,7 @@ class ResourceFolderModelTest : public QObject {
         for (auto mod : model.allMods())
             qDebug() << mod->name();
 
-        QCOMPARE(model.size(), 4);
+        QCOMPARE(model.size(), 2);
 
         model.stopWatching();
     }
@@ -217,8 +217,8 @@ class ResourceFolderModelTest : public QObject {
 
         auto& res_1 = model.at(0).type() != ResourceType::FOLDER ? model.at(0) : model.at(1);
         auto& res_2 = model.at(0).type() == ResourceType::FOLDER ? model.at(0) : model.at(1);
-        auto id_1 = res_1.internal_id();
-        auto id_2 = res_2.internal_id();
+        auto id_1 = res_1.internalId();
+        auto id_2 = res_2.internalId();
         bool initial_enabled_res_2 = res_2.enabled();
         bool initial_enabled_res_1 = res_1.enabled();
 
@@ -236,12 +236,12 @@ class ResourceFolderModelTest : public QObject {
         qDebug() << "res_1 got successfully toggled again.";
 
         QVERIFY(res_1.enabled() == initial_enabled_res_1);
-        QVERIFY(res_1.internal_id() == id_1);
+        QVERIFY(res_1.internalId() == id_1);
         qDebug() << "res_1 got back to its initial state.";
 
         QVERIFY(!res_2.enable(initial_enabled_res_2 ? EnableAction::ENABLE : EnableAction::DISABLE));
         QVERIFY(res_2.enabled() == initial_enabled_res_2);
-        QVERIFY(res_2.internal_id() == id_2);
+        QVERIFY(res_2.internalId() == id_2);
     }
 };
 

@@ -39,12 +39,12 @@
 #include <QStandardPaths>
 
 #include "Application.h"
-#include "Commandline.h"
 #include "FileSystem.h"
 #include "launch/LaunchTask.h"
 #include "minecraft/MinecraftInstance.h"
+#include "settings/SettingsObject.h"
 
-#ifdef Q_OS_LINUX
+#if defined(Q_OS_LINUX) && defined(ENABLE_GAMEMODE)
 #include "gamemode_client.h"
 #endif
 
@@ -79,7 +79,7 @@ void LauncherPartLaunch::executeTask()
         return;
     }
 
-    auto instance = m_parent->instance();
+    auto* instance = m_parent->instance();
 
     QString legacyJarPath;
     if (instance->getLauncher() == "legacy" || instance->shouldApplyOnlineFixes()) {
@@ -107,8 +107,9 @@ void LauncherPartLaunch::executeTask()
     auto classPath = instance->getClassPath();
     classPath.prepend(jarPath);
 
-    if (!legacyJarPath.isEmpty())
+    if (!legacyJarPath.isEmpty()) {
         classPath.prepend(legacyJarPath);
+    }
 
     auto natPath = instance->getNativePath();
 #ifdef Q_OS_WIN
@@ -131,9 +132,13 @@ void LauncherPartLaunch::executeTask()
     qDebug() << args.join(' ');
 
     QString wrapperCommandStr = instance->getWrapperCommand().trimmed();
+    if (APPLICATION->settings()->get("SyncGameOptions").toBool()) {
+        const auto error = m_optionsSync.beforeLaunch(instance->gameRoot(), APPLICATION->dataRoot());
+        if (!error.isEmpty())
+            emit logLine(tr("Could not sync Minecraft options: %1").arg(error), MessageLevel::Warning);
+    }
     if (!wrapperCommandStr.isEmpty()) {
-        wrapperCommandStr = m_parent->substituteVariables(wrapperCommandStr);
-        auto wrapperArgs = Commandline::splitArgs(wrapperCommandStr);
+        auto wrapperArgs = m_parent->substituteVariables(wrapperCommandStr);
         auto wrapperCommand = wrapperArgs.takeFirst();
         auto realWrapperCommand = QStandardPaths::findExecutable(wrapperCommand);
         if (realWrapperCommand.isEmpty()) {
@@ -149,11 +154,11 @@ void LauncherPartLaunch::executeTask()
         m_process.start(javaPath, args);
     }
 
-#ifdef Q_OS_LINUX
+#if defined(Q_OS_LINUX) && defined(ENABLE_GAMEMODE)
     if (instance->settings()->get("EnableFeralGamemode").toBool() && APPLICATION->capabilities() & Application::SupportsGameMode) {
         auto pid = m_process.processId();
-        if (pid) {
-            gamemode_request_start_for(pid);
+        if (pid != 0) {
+            gamemode_request_start_for(static_cast<pid_t>(pid));
         }
     }
 #endif
@@ -164,22 +169,33 @@ void LauncherPartLaunch::on_state(LoggedProcess::State state)
     switch (state) {
         case LoggedProcess::FailedToStart: {
             //: Error message displayed if instace can't start
-            const char* reason = QT_TR_NOOP("Could not launch Minecraft!");
-            emit logLine(reason, MessageLevel::Fatal);
-            emitFailed(tr(reason));
+            const char* reason = QT_TR_NOOP("Could not launch Minecraft: %1");
+            emit logLine(QString(reason).arg(m_process.errorString()), MessageLevel::Fatal);
+            emitFailed(tr(reason).arg(m_process.errorString()));
             return;
         }
         case LoggedProcess::Aborted:
         case LoggedProcess::Crashed: {
+            if (APPLICATION->settings()->get("SyncGameOptions").toBool()) {
+                const auto error = m_optionsSync.afterExit();
+                if (!error.isEmpty())
+                    emit logLine(tr("Could not sync Minecraft options: %1").arg(error), MessageLevel::Warning);
+            }
             m_parent->setPid(-1);
             m_parent->instance()->setMinecraftRunning(false);
             emitFailed(tr("Game crashed."));
             return;
         }
         case LoggedProcess::Finished: {
-            auto instance = m_parent->instance();
-            if (instance->settings()->get("CloseAfterLaunch").toBool())
+            auto* instance = m_parent->instance();
+            if (APPLICATION->settings()->get("SyncGameOptions").toBool()) {
+                const auto error = m_optionsSync.afterExit();
+                if (!error.isEmpty())
+                    emit logLine(tr("Could not sync Minecraft options: %1").arg(error), MessageLevel::Warning);
+            }
+            if (instance->settings()->get("CloseAfterLaunch").toBool()) {
                 APPLICATION->showMainWindow();
+            }
 
             m_parent->setPid(-1);
             m_parent->instance()->setMinecraftRunning(false);

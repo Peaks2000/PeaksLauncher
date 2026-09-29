@@ -19,23 +19,47 @@
 
 #include "ResourceDownloadTask.h"
 
+#include <utility>
+
 #include "Application.h"
 
 #include "FileSystem.h"
+#include "minecraft/MinecraftInstance.h"
+#include "minecraft/PackProfile.h"
 #include "minecraft/mod/ResourceFolderModel.h"
 
 #include "minecraft/mod/ShaderPackFolderModel.h"
+#include "modplatform/ModIndex.h"
 #include "modplatform/helpers/HashUtils.h"
-#include "net/ApiDownload.h"
+#include "net/ApiRequest.h"
 #include "net/ChecksumValidator.h"
+
+namespace {
+Net::ModrinthDownloadMeta createModrinthMeta(MinecraftInstance* instance, QString reason, QString dependentOn)
+{
+    auto* profile = instance->getPackProfile();
+    if (!profile) {
+        return {};
+    }
+
+    auto loaders = profile->getModLoadersList();
+
+    return { .reason = std::move(reason),
+             .gameVersion = profile->getComponentVersion("net.minecraft"),
+             .loader = !loaders.isEmpty() ? ModPlatform::getModLoaderAsString(loaders.first()) : "",
+             .dependentOn = std::move(dependentOn) };
+}
+}  // namespace
 
 ResourceDownloadTask::ResourceDownloadTask(ModPlatform::IndexedPack::Ptr pack,
                                            ModPlatform::IndexedVersion version,
                                            ResourceFolderModel* packs,
-                                           bool is_indexed)
+                                           bool isIndexed,
+                                           QString downloadReason,
+                                           QString dependentOn)
     : m_pack(std::move(pack)), m_pack_version(std::move(version)), m_pack_model(packs)
 {
-    if (is_indexed) {
+    if (isIndexed) {
         m_update_task.reset(new LocalResourceUpdateTask(m_pack_model->indexDir(), *m_pack, m_pack_version));
         connect(m_update_task.get(), &LocalResourceUpdateTask::hasOldResource, this, &ResourceDownloadTask::hasOldResource);
 
@@ -45,9 +69,11 @@ ResourceDownloadTask::ResourceDownloadTask(ModPlatform::IndexedPack::Ptr pack,
     m_filesNetJob.reset(new NetJob(tr("Resource download"), APPLICATION->network()));
     m_filesNetJob->setStatus(tr("Downloading resource:\n%1").arg(m_pack_version.downloadUrl));
 
-    auto action = Net::ApiDownload::makeFile(m_pack_version.downloadUrl, m_pack_model->dir().absoluteFilePath(getFilename()));
-    if (!m_pack_version.hash_type.isEmpty() && !m_pack_version.hash.isEmpty()) {
-        switch (Hashing::algorithmFromString(m_pack_version.hash_type)) {
+    auto action = Net::ApiRequest::makeFile(
+        m_pack_version.downloadUrl, m_pack_model->dir().absoluteFilePath(getFilename()), Net::Request::Option::NoOptions,
+        createModrinthMeta(m_pack_model->instance(), std::move(downloadReason), std::move(dependentOn)));
+    if (!m_pack_version.hashType.isEmpty() && !m_pack_version.hash.isEmpty()) {
+        switch (Hashing::algorithmFromString(m_pack_version.hashType)) {
             case Hashing::Algorithm::Md4:
                 action->addValidator(new Net::ChecksumValidator(QCryptographicHash::Algorithm::Md4, m_pack_version.hash));
                 break;
@@ -82,8 +108,9 @@ void ResourceDownloadTask::downloadSucceeded()
     auto oldName = std::get<0>(to_delete);
     auto oldFilename = std::get<1>(to_delete);
 
-    if (oldName.isEmpty() || oldFilename == m_pack_version.fileName)
+    if (oldName.isEmpty() || oldFilename == m_pack_version.fileName) {
         return;
+    }
 
     m_pack_model->uninstallResource(oldFilename, true);
 
@@ -95,8 +122,9 @@ void ResourceDownloadTask::downloadSucceeded()
         if (oldConfig.exists() && !newConfig.exists()) {
             bool success = FS::move(oldConfig.filePath(), newConfig.filePath());
 
-            if (!success)
+            if (!success) {
                 emit logWarning(tr("Failed to rename shader config from '%1' to '%2'").arg(oldConfig.fileName(), newConfig.fileName()));
+            }
         }
     }
 }
@@ -104,7 +132,7 @@ void ResourceDownloadTask::downloadSucceeded()
 void ResourceDownloadTask::downloadFailed(QString reason)
 {
     m_filesNetJob.reset();
-    emitFailed(reason);
+    emitFailed(std::move(reason));
 }
 
 void ResourceDownloadTask::downloadProgressChanged(qint64 current, qint64 total)
@@ -114,7 +142,7 @@ void ResourceDownloadTask::downloadProgressChanged(qint64 current, qint64 total)
 
 // This indirection is done so that we don't delete a mod before being sure it was
 // downloaded successfully!
-void ResourceDownloadTask::hasOldResource(QString name, QString filename)
+void ResourceDownloadTask::hasOldResource(const QString& name, const QString& filename)
 {
     to_delete = { name, filename };
 }

@@ -20,6 +20,7 @@
 #include <minecraft/auth/AuthSession.h>
 
 #include "MinecraftTarget.h"
+#include "GameOptionsSync.h"
 
 class LauncherPartLaunch : public LaunchStep {
     Q_OBJECT
@@ -44,6 +45,7 @@ class LauncherPartLaunch : public LaunchStep {
     QString m_command;
     AuthSessionPtr m_session;
     QString m_launchScript;
+    GameOptionsSync m_optionsSync;
     MinecraftTarget::Ptr m_targetToJoin;
 
     bool mayProceed = false;

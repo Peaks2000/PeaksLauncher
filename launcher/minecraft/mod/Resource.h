@@ -35,17 +35,19 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include <QDateTime>
 #include <QFileInfo>
 #include <QObject>
 #include <QPointer>
+#include <memory>
 
 #include "MetadataHandler.h"
-#include "QObjectPtr.h"
 
-class BaseInstance;
+class MinecraftInstance;
 
-enum class ResourceType {
+enum class ResourceType : std::uint8_t {
     UNKNOWN,     //!< Indicates an unspecified resource type.
     ZIPFILE,     //!< The resource is a zip file containing the resource's class files.
     SINGLEFILE,  //!< The resource is a single file (not a zip file).
@@ -55,62 +57,64 @@ enum class ResourceType {
 
 QDebug operator<<(QDebug debug, ResourceType type);
 
-enum class ResourceStatus {
-    INSTALLED,      // Both JAR and Metadata are present
-    NOT_INSTALLED,  // Only the Metadata is present
-    NO_METADATA,    // Only the JAR is present
-    UNKNOWN,        // Default status
+enum class ResourceStatus : std::uint8_t {
+    Installed,     // Both JAR and Metadata are present
+    NotInstalled,  // Only the Metadata is present
+    NoMetadata,    // Only the JAR is present
+    Unknown,       // Default status
 };
 
 QDebug operator<<(QDebug debug, ResourceStatus status);
 
-enum class SortType {
-    NAME,
-    DATE,
-    VERSION,
-    ENABLED,
-    PACK_FORMAT,
-    PROVIDER,
-    SIZE,
-    SIDE,
-    MC_VERSIONS,
-    LOADERS,
-    RELEASE_TYPE,
-    REQUIRES,
-    REQUIRED_BY,
+enum class SortType : std::uint8_t {
+    Name,
+    Date,
+    Version,
+    Enabled,
+    PackFormat,
+    Provider,
+    Size,
+    Side,
+    McVersions,
+    Loaders,
+    ReleaseType,
+    Requires,
+    RequiredBy,
+    Filename,
+    LockUpdate
 };
 
-enum class EnableAction { ENABLE, DISABLE, TOGGLE };
+enum class EnableAction : std::uint8_t { ENABLE, DISABLE, TOGGLE };
 
 /** General class for managed resources. It mirrors a file in disk, with some more info
  *  for display and house-keeping purposes.
  *
  *  Subclass it to add additional data / behavior, such as Mods or Resource packs.
  */
-class Resource : public QObject {
-    Q_OBJECT
-    Q_DISABLE_COPY(Resource)
+class Resource {
    public:
-    using Ptr = shared_qobject_ptr<Resource>;
-    using WeakPtr = QPointer<Resource>;
+    Resource(const Resource&) = delete;
+    Resource& operator=(const Resource&) = delete;
 
-    Resource(QObject* parent = nullptr);
-    Resource(QFileInfo file_info);
-    Resource(QString file_path) : Resource(QFileInfo(file_path)) {}
+   public:
+    using Ptr = std::shared_ptr<Resource>;
+    explicit Resource(const QFileInfo& fileInfo);
 
-    ~Resource() override = default;
+    explicit Resource(const QString& filePath) : Resource(QFileInfo(filePath)) {}
 
-    void setFile(QFileInfo file_info);
+    virtual ~Resource() = default;
+
+    void setFile(QFileInfo fileInfo);
     void parseFile();
 
-    auto fileinfo() const -> QFileInfo { return m_file_info; }
-    auto dateTimeChanged() const -> QDateTime { return m_changed_date_time; }
-    auto internal_id() const -> QString { return m_internal_id; }
+    auto fileinfo() const -> QFileInfo { return m_fileInfo; }
+    auto dateTimeChanged() const -> QDateTime { return m_changedDateTime; }
+    auto internalId() const -> QString { return m_internalId; }
     auto type() const -> ResourceType { return m_type; }
     bool enabled() const { return m_enabled; }
     auto getOriginalFileName() const -> QString;
-    QString sizeStr() const { return m_size_str; }
-    qint64 sizeInfo() const { return m_size_info; }
+    QString sizeStr() const { return m_sizeStr; }
+    qint64 sizeInfo() const { return m_sizeInfo; }
 
     virtual auto name() const -> QString;
     virtual bool valid() const { return m_type != ResourceType::UNKNOWN; }
@@ -119,7 +123,9 @@ class Resource : public QObject {
     auto metadata() -> std::shared_ptr<Metadata::ModStruct> { return m_metadata; }
     auto metadata() const -> std::shared_ptr<const Metadata::ModStruct> { return m_metadata; }
     auto provider() const -> QString;
+    virtual auto version() const -> QString;
     virtual auto homepage() const -> QString;
+    bool lockUpdate() const;
 
     void setStatus(ResourceStatus status) { m_status = status; }
     void setMetadata(std::shared_ptr<Metadata::ModStruct>&& metadata);
@@ -130,7 +136,7 @@ class Resource : public QObject {
      * This is initially empty, and may be updated when calling updateIssues.
      */
     QStringList issues() const;
-    void updateIssues(const BaseInstance* inst);
+    void updateIssues(const MinecraftInstance* inst);
     bool hasIssues() const { return !m_issues.empty(); }
 
     /** Compares two Resources, for sorting purposes, considering a ascending order, returning:
@@ -138,12 +144,12 @@ class Resource : public QObject {
      *  = 0: 'this' is equal to 'other'
      *  < 0: 'this' comes before 'other'
      */
-    virtual int compare(const Resource& other, SortType type = SortType::NAME) const;
+    virtual int compare(const Resource& other, SortType type = SortType::Name) const;
 
     /** Returns whether the given filter should filter out 'this' (false),
      *  or if such filter includes the Resource (true).
      */
-    virtual bool applyFilter(QRegularExpression filter) const;
+    virtual bool applyFilter(const QRegularExpression& filter) const;
 
     /** Changes the enabled property, according to 'action'.
      *
@@ -151,23 +157,23 @@ class Resource : public QObject {
      */
     bool enable(EnableAction action);
 
-    auto shouldResolve() const -> bool { return !m_is_resolving && !m_is_resolved; }
-    auto isResolving() const -> bool { return m_is_resolving; }
-    auto isResolved() const -> bool { return m_is_resolved; }
-    auto resolutionTicket() const -> int { return m_resolution_ticket; }
+    auto shouldResolve() const -> bool { return !m_isResolving && !m_isResolved; }
+    auto isResolving() const -> bool { return m_isResolving; }
+    auto isResolved() const -> bool { return m_isResolved; }
+    auto resolutionTicket() const -> int { return m_resolutionTicket; }
 
     void setResolving(bool resolving, int resolutionTicket)
     {
-        m_is_resolving = resolving;
-        m_resolution_ticket = resolutionTicket;
+        m_isResolving = resolving;
+        m_resolutionTicket = resolutionTicket;
     }
 
     // Delete all files of this resource.
-    auto destroy(const QDir& index_dir, bool preserve_metadata = false, bool attempt_trash = true) -> bool;
+    auto destroy(const QDir& indexDir, bool preserveMetadata = false, bool attemptTrash = true) -> bool;
     // Delete the metadata only.
-    auto destroyMetadata(const QDir& index_dir) -> void;
+    auto destroyMetadata(const QDir& indexDir) -> void;
 
-    auto isSymLink() const -> bool { return m_file_info.isSymLink(); }
+    auto isSymLink() const -> bool { return m_fileInfo.isSymLink(); }
 
     /**
      * @brief Take a instance path, checks if the file pointed to by the resource is a symlink or under a symlink in that instance
@@ -182,12 +188,12 @@ class Resource : public QObject {
 
    protected:
     /* The file corresponding to this resource. */
-    QFileInfo m_file_info;
+    QFileInfo m_fileInfo{};
     /* The cached date when this file was last changed. */
-    QDateTime m_changed_date_time;
+    QDateTime m_changedDateTime;
 
     /* Internal ID for internal purposes. Properties such as human-readability should not be assumed. */
-    QString m_internal_id;
+    QString m_internalId;
     /* Name as reported via the file name. In the absence of a better name, this is shown to the user. */
     QString m_name;
 
@@ -195,7 +201,7 @@ class Resource : public QObject {
     ResourceType m_type = ResourceType::UNKNOWN;
 
     /* Installation status of the resource. */
-    ResourceStatus m_status = ResourceStatus::UNKNOWN;
+    ResourceStatus m_status = ResourceStatus::Unknown;
 
     std::shared_ptr<Metadata::ModStruct> m_metadata = nullptr;
 
@@ -205,9 +211,10 @@ class Resource : public QObject {
     QList<const char*> m_issues;
 
     /* Used to keep trach of pending / concluded actions on the resource. */
-    bool m_is_resolving = false;
-    bool m_is_resolved = false;
-    int m_resolution_ticket = 0;
-    QString m_size_str;
-    qint64 m_size_info;
+    bool m_isResolving = false;
+    bool m_isResolved = false;
+    int m_resolutionTicket = 0;
+    QString m_sizeStr;
+    qint64 m_sizeInfo = 0;
+    std::uintmax_t m_hardLinkCount = 0;
 };

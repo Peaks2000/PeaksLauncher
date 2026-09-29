@@ -39,8 +39,6 @@
 
 #include "ui/pages/BasePage.h"
 
-#include "settings/Setting.h"
-
 class QIdentityProxyModel;
 class QItemSelection;
 namespace Ui {
@@ -51,7 +49,6 @@ class ScreenshotsFSModel;
 
 struct ScreenShot;
 class ScreenshotList;
-class ImgurAlbumCreation;
 
 class ScreenshotsPage : public QMainWindow, public BasePage {
     Q_OBJECT
@@ -61,7 +58,6 @@ class ScreenshotsPage : public QMainWindow, public BasePage {
     virtual ~ScreenshotsPage();
 
     void openedImpl() override;
-    void closedImpl() override;
 
     enum { NothingDone = 0x42 };
 
@@ -78,14 +74,14 @@ class ScreenshotsPage : public QMainWindow, public BasePage {
 
    private slots:
     void on_actionUpload_triggered();
-    void on_actionCopy_Image_triggered();
-    void on_actionCopy_File_s_triggered();
+    void on_actionCopy_Image_triggered() const;
+    void on_actionCopy_File_s_triggered() const;
     void on_actionDelete_triggered();
-    void on_actionRename_triggered();
-    void on_actionView_Folder_triggered();
-    void onItemActivated(QModelIndex);
-    void onCurrentSelectionChanged(const QItemSelection& selected);
-    void ShowContextMenu(const QPoint& pos);
+    void on_actionRename_triggered() const;
+    void on_actionView_Folder_triggered() const;
+    void onItemActivated(QModelIndex) const;
+    void onCurrentSelectionChanged(const QItemSelection& selected) const;
+    void showContextMenu(const QPoint& pos);
 
    private:
     Ui::ScreenshotsPage* ui;
@@ -94,6 +90,4 @@ class ScreenshotsPage : public QMainWindow, public BasePage {
     QString m_folder;
     bool m_valid = false;
     bool m_uploadActive = false;
-
-    std::shared_ptr<Setting> m_wide_bar_setting = nullptr;
 };

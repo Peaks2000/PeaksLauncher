@@ -7,33 +7,33 @@
 #include <QTime>
 #include <limits>
 
-#define GET_TYPE()                                                          \
-    Qt::ConnectionType type;                                                \
-    if (QThread::currentThread() != QCoreApplication::instance()->thread()) \
-        type = Qt::BlockingQueuedConnection;                                \
-    else                                                                    \
+#define GET_TYPE()                           \
+    Qt::ConnectionType type;                 \
+    if (!QThread::isMainThread())            \
+        type = Qt::BlockingQueuedConnection; \
+    else                                     \
         type = Qt::DirectConnection;
 
-#define DEFINE_FUNC_NO_PARAM(NAME, RET_TYPE)                                                 \
+#define DEFINE_FUNC_NO_PARAM(NAME, RET_TYPE, RET_DEF)                                        \
     static RET_TYPE NAME()                                                                   \
     {                                                                                        \
-        RET_TYPE ret;                                                                        \
+        RET_TYPE ret = RET_DEF;                                                              \
         GET_TYPE()                                                                           \
         QMetaObject::invokeMethod(s_instance, "_" #NAME, type, Q_RETURN_ARG(RET_TYPE, ret)); \
         return ret;                                                                          \
     }
-#define DEFINE_FUNC_ONE_PARAM(NAME, RET_TYPE, PARAM_1_TYPE)                                                           \
+#define DEFINE_FUNC_ONE_PARAM(NAME, RET_TYPE, RET_DEF, PARAM_1_TYPE)                                                  \
     static RET_TYPE NAME(PARAM_1_TYPE p1)                                                                             \
     {                                                                                                                 \
-        RET_TYPE ret;                                                                                                 \
+        RET_TYPE ret = RET_DEF;                                                                                       \
         GET_TYPE()                                                                                                    \
         QMetaObject::invokeMethod(s_instance, "_" #NAME, type, Q_RETURN_ARG(RET_TYPE, ret), Q_ARG(PARAM_1_TYPE, p1)); \
         return ret;                                                                                                   \
     }
-#define DEFINE_FUNC_TWO_PARAM(NAME, RET_TYPE, PARAM_1_TYPE, PARAM_2_TYPE)                                            \
+#define DEFINE_FUNC_TWO_PARAM(NAME, RET_TYPE, RET_DEF, PARAM_1_TYPE, PARAM_2_TYPE)                                   \
     static RET_TYPE NAME(PARAM_1_TYPE p1, PARAM_2_TYPE p2)                                                           \
     {                                                                                                                \
-        RET_TYPE ret;                                                                                                \
+        RET_TYPE ret = RET_DEF;                                                                                      \
         GET_TYPE()                                                                                                   \
         QMetaObject::invokeMethod(s_instance, "_" #NAME, type, Q_RETURN_ARG(RET_TYPE, ret), Q_ARG(PARAM_1_TYPE, p1), \
                                   Q_ARG(PARAM_2_TYPE, p2));                                                          \
@@ -46,25 +46,25 @@ class PixmapCache final : public QObject {
     Q_OBJECT
 
    public:
-    PixmapCache(QObject* parent) : QObject(parent) {}
+    explicit PixmapCache(QObject* parent) : QObject(parent) {}
     ~PixmapCache() override = default;
 
     static PixmapCache& instance() { return *s_instance; }
     static void setInstance(PixmapCache* i) { s_instance = i; }
 
    public:
-    DEFINE_FUNC_NO_PARAM(cacheLimit, int)
-    DEFINE_FUNC_NO_PARAM(clear, bool)
-    DEFINE_FUNC_TWO_PARAM(find, bool, const QString&, QPixmap*)
-    DEFINE_FUNC_TWO_PARAM(find, bool, const QPixmapCache::Key&, QPixmap*)
-    DEFINE_FUNC_TWO_PARAM(insert, bool, const QString&, const QPixmap&)
-    DEFINE_FUNC_ONE_PARAM(insert, QPixmapCache::Key, const QPixmap&)
-    DEFINE_FUNC_ONE_PARAM(remove, bool, const QString&)
-    DEFINE_FUNC_ONE_PARAM(remove, bool, const QPixmapCache::Key&)
-    DEFINE_FUNC_TWO_PARAM(replace, bool, const QPixmapCache::Key&, const QPixmap&)
-    DEFINE_FUNC_ONE_PARAM(setCacheLimit, bool, int)
-    DEFINE_FUNC_NO_PARAM(markCacheMissByEviciton, bool)
-    DEFINE_FUNC_ONE_PARAM(setFastEvictionThreshold, bool, int)
+    DEFINE_FUNC_NO_PARAM(cacheLimit, int, -1)
+    DEFINE_FUNC_NO_PARAM(clear, bool, false)
+    DEFINE_FUNC_TWO_PARAM(find, bool, false, const QString&, QPixmap*)
+    DEFINE_FUNC_TWO_PARAM(find, bool, false, const QPixmapCache::Key&, QPixmap*)
+    DEFINE_FUNC_TWO_PARAM(insert, bool, false, const QString&, const QPixmap&)
+    DEFINE_FUNC_ONE_PARAM(insert, QPixmapCache::Key, {}, const QPixmap&)
+    DEFINE_FUNC_ONE_PARAM(remove, bool, false, const QString&)
+    DEFINE_FUNC_ONE_PARAM(remove, bool, false, const QPixmapCache::Key&)
+    DEFINE_FUNC_TWO_PARAM(replace, bool, false, const QPixmapCache::Key&, const QPixmap&)
+    DEFINE_FUNC_ONE_PARAM(setCacheLimit, bool, false, int)
+    DEFINE_FUNC_NO_PARAM(markCacheMissByEviciton, bool, false)
+    DEFINE_FUNC_ONE_PARAM(setFastEvictionThreshold, bool, false, int)
 
     // NOTE: Every function returns something non-void to simplify the macros.
    private slots:
@@ -88,7 +88,15 @@ class PixmapCache final : public QObject {
         QPixmapCache::remove(key);
         return true;
     }
-    bool _replace(const QPixmapCache::Key& key, const QPixmap& pixmap) { return QPixmapCache::replace(key, pixmap); }
+    bool _replace(const QPixmapCache::Key& key, const QPixmap& pixmap)
+    {
+        if (!key.isValid()) {
+            return false;
+        }
+        remove(key);
+        const_cast<QPixmapCache::Key&>(key) = insert(pixmap);
+        return key.isValid();
+    }
     bool _setCacheLimit(int n)
     {
         QPixmapCache::setCacheLimit(n);
@@ -101,33 +109,33 @@ class PixmapCache final : public QObject {
      */
     bool _markCacheMissByEviciton()
     {
-        static constexpr uint maxCache = static_cast<uint>(std::numeric_limits<int>::max()) / 4;
-        static constexpr uint step = 10240;
-        static constexpr int oneSecond = 1000;
+        static constexpr uint s_maxCache = static_cast<uint>(std::numeric_limits<int>::max()) / 4;
+        static constexpr uint s_step = 10240;
+        static constexpr int s_oneSecond = 1000;
 
         auto now = QTime::currentTime();
-        if (!m_last_cache_miss_by_eviciton.isNull()) {
-            auto diff = m_last_cache_miss_by_eviciton.msecsTo(now);
-            if (diff < oneSecond) {  // less than a second ago
-                ++m_consecutive_fast_evicitons;
+        if (!m_lastCacheMissByEviciton.isNull()) {
+            auto diff = m_lastCacheMissByEviciton.msecsTo(now);
+            if (diff < s_oneSecond) {  // less than a second ago
+                ++m_consecutiveFastEvicitons;
             } else {
-                m_consecutive_fast_evicitons = 0;
+                m_consecutiveFastEvicitons = 0;
             }
         }
-        m_last_cache_miss_by_eviciton = now;
-        if (m_consecutive_fast_evicitons >= m_consecutive_fast_evicitons_threshold) {
+        m_lastCacheMissByEviciton = now;
+        if (m_consecutiveFastEvicitons >= m_consecutiveFastEvicitonsThreshold) {
             // increase the cache size
-            uint newSize = _cacheLimit() + step;
-            if (newSize >= maxCache) {  // increase it until you overflow :D
-                newSize = maxCache;
-                qDebug() << m_consecutive_fast_evicitons
-                         << tr("pixmap cache misses by eviction happened too fast, doing nothing as the cache size reached it's limit");
+            uint newSize = _cacheLimit() + s_step;
+            if (newSize >= s_maxCache) {  // increase it until you overflow :D
+                newSize = s_maxCache;
+                qDebug() << m_consecutiveFastEvicitons
+                         << "pixmap cache misses by eviction happened too fast, doing nothing as the cache size reached it's limit";
             } else {
-                qDebug() << m_consecutive_fast_evicitons
-                         << tr("pixmap cache misses by eviction happened too fast, increasing cache size to") << static_cast<int>(newSize);
+                qDebug() << m_consecutiveFastEvicitons << "pixmap cache misses by eviction happened too fast, increasing cache size to"
+                         << static_cast<int>(newSize);
             }
             _setCacheLimit(static_cast<int>(newSize));
-            m_consecutive_fast_evicitons = 0;
+            m_consecutiveFastEvicitons = 0;
             return true;
         }
         return false;
@@ -135,13 +143,13 @@ class PixmapCache final : public QObject {
 
     bool _setFastEvictionThreshold(int threshold)
     {
-        m_consecutive_fast_evicitons_threshold = threshold;
+        m_consecutiveFastEvicitonsThreshold = threshold;
         return true;
     }
 
    private:
     static PixmapCache* s_instance;
-    QTime m_last_cache_miss_by_eviciton;
-    int m_consecutive_fast_evicitons = 0;
-    int m_consecutive_fast_evicitons_threshold = 15;
+    QTime m_lastCacheMissByEviciton;
+    int m_consecutiveFastEvicitons = 0;
+    int m_consecutiveFastEvicitonsThreshold = 15;
 };

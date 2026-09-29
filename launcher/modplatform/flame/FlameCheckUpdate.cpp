@@ -14,11 +14,9 @@
 #include "minecraft/mod/tasks/GetModDependenciesTask.h"
 
 #include "modplatform/ModIndex.h"
-#include "net/ApiDownload.h"
+#include "net/ApiRequest.h"
 #include "net/NetJob.h"
 #include "tasks/Task.h"
-
-static FlameAPI api;
 
 bool FlameCheckUpdate::abort()
 {
@@ -39,7 +37,7 @@ void FlameCheckUpdate::executeTask()
 {
     setStatus(tr("Preparing resources for CurseForge..."));
 
-    auto netJob = new NetJob("Get latest versions", APPLICATION->network());
+    auto* netJob = new NetJob("Get latest versions", APPLICATION->network());
     connect(netJob, &Task::finished, this, &FlameCheckUpdate::collectBlockedMods);
 
     connect(netJob, &Task::progress, this, &FlameCheckUpdate::setProgress);
@@ -47,12 +45,13 @@ void FlameCheckUpdate::executeTask()
     connect(netJob, &Task::details, this, &FlameCheckUpdate::setDetails);
     for (auto* resource : m_resources) {
         auto project = std::make_shared<ModPlatform::IndexedPack>();
-        project->addonId = resource->metadata()->project_id.toString();
-        auto versionsUrlOptional = api.getVersionsURL({ project, m_gameVersions });
-        if (!versionsUrlOptional.has_value())
+        project->addonId = resource->metadata()->projectId.toString();
+        auto versionsUrlOptional = FlameAPI::get().getVersionsURL({ .pack = project, .mcVersions = m_gameVersions });
+        if (!versionsUrlOptional.has_value()) {
             continue;
+        }
 
-        auto [task, response] = Net::ApiDownload::makeByteArray(versionsUrlOptional.value());
+        auto [task, response] = Net::ApiRequest::makeByteArray(versionsUrlOptional.value());
 
         connect(task.get(), &Task::succeeded, this, [this, resource, response] { getLatestVersionCallback(resource, response); });
         netJob->addNetAction(task);
@@ -63,133 +62,125 @@ void FlameCheckUpdate::executeTask()
 
 void FlameCheckUpdate::getLatestVersionCallback(Resource* resource, QByteArray* response)
 {
-    QJsonParseError parse_error{};
-    QJsonDocument doc = QJsonDocument::fromJson(*response, &parse_error);
-    if (parse_error.error != QJsonParseError::NoError) {
-        qWarning() << "Error while parsing JSON response from latest mod version at" << parse_error.offset
-                   << "reason:" << parse_error.errorString();
+    auto pack = std::make_shared<ModPlatform::IndexedPack>();
+    auto parse = [&pack, &resource, &response] -> Result<> {
+        TRY_INTO(const auto& doc, Json::requireObject(*response).and_then([](const auto& v) { return Json::requireArray(v, "data"); }))
+        // Fake pack with the necessary info to pass to the download task :)
+        pack->name = resource->name();
+        pack->slug = resource->metadata()->slug;
+        pack->addonId = resource->metadata()->projectId;
+        pack->provider = ModPlatform::ResourceProvider::FLAME;
+        return FlameMod::loadIndexedPackVersions(*pack.get(), doc);
+    };
+    if (auto res = parse(); !res) {
+        qWarning() << "Error while parsing JSON response from latest mod version:" << res.error();
         qWarning() << *response;
         return;
     }
 
-    // Fake pack with the necessary info to pass to the download task :)
-    auto pack = std::make_shared<ModPlatform::IndexedPack>();
-    pack->name = resource->name();
-    pack->slug = resource->metadata()->slug;
-    pack->addonId = resource->metadata()->project_id;
-    pack->provider = ModPlatform::ResourceProvider::FLAME;
-    try {
-        auto obj = Json::requireObject(doc);
-        auto arr = Json::requireArray(obj, "data");
-
-        FlameMod::loadIndexedPackVersions(*pack.get(), arr);
-    } catch (Json::JsonException& e) {
-        qCritical() << "Failed to parse response from a version request.";
-        qCritical() << e.what();
-        qDebug() << doc;
-    }
-    auto latest_ver = api.getLatestVersion(pack->versions, m_loadersList, resource->metadata()->loaders, !m_loadersList.isEmpty());
+    auto latestVer =
+        FlameAPI::getLatestVersion(pack->versions, m_loadersList, resource->metadata()->loaders, !m_loadersList.isEmpty(), m_releaseTypes);
 
     setStatus(tr("Parsing the API response from CurseForge for '%1'...").arg(resource->name()));
 
-    if (!latest_ver.has_value() || !latest_ver->addonId.isValid()) {
+    if (!latestVer.has_value() || !latestVer->addonId.isValid()) {
         QString reason;
-        if (dynamic_cast<Mod*>(resource) != nullptr)
+        if (dynamic_cast<Mod*>(resource) != nullptr) {
             reason =
                 tr("No valid version found for this resource. It's probably unavailable for the current game "
                    "version / mod loader.");
-        else
+        } else {
             reason = tr("No valid version found for this resource. It's probably unavailable for the current game version.");
+        }
 
         emit checkFailed(resource, reason);
         return;
     }
 
-    if (latest_ver->downloadUrl.isEmpty() && latest_ver->fileId != resource->metadata()->file_id) {
-        m_blocked[resource] = latest_ver->fileId.toString();
+    if (latestVer->downloadUrl.isEmpty() && latestVer->fileId != resource->metadata()->fileId) {
+        m_blocked[resource] = latestVer->fileId.toString();
         return;
     }
 
-    if (!latest_ver->hash.isEmpty() &&
-        (resource->metadata()->hash != latest_ver->hash || resource->status() == ResourceStatus::NOT_INSTALLED)) {
-        auto old_version = resource->metadata()->version_number;
-        if (old_version.isEmpty()) {
-            if (resource->status() == ResourceStatus::NOT_INSTALLED)
-                old_version = tr("Not installed");
-            else
-                old_version = tr("Unknown");
+    if (!latestVer->hash.isEmpty() &&
+        (resource->metadata()->hash != latestVer->hash || resource->status() == ResourceStatus::NotInstalled)) {
+        auto oldVersion = resource->metadata()->versionNumber;
+        if (oldVersion.isEmpty()) {
+            if (resource->status() == ResourceStatus::NotInstalled) {
+                oldVersion = tr("Not installed");
+            } else {
+                oldVersion = tr("Unknown");
+            }
         }
 
-        auto download_task = makeShared<ResourceDownloadTask>(pack, latest_ver.value(), m_resourceModel);
-        m_updates.emplace_back(pack->name, resource->metadata()->hash, old_version, latest_ver->version, latest_ver->version_type,
-                               api.getModFileChangelog(latest_ver->addonId.toInt(), latest_ver->fileId.toInt()),
-                               ModPlatform::ResourceProvider::FLAME, download_task, resource->enabled());
+        auto downloadTask = makeShared<ResourceDownloadTask>(pack, latestVer.value(), m_resourceModel, true, "update");
+        m_updates.emplace_back(pack->name, resource->metadata()->hash, oldVersion, latestVer->version, latestVer->versionType,
+                               FlameAPI::getModFileChangelog(latestVer->addonId.toInt(), latestVer->fileId.toInt()),
+                               ModPlatform::ResourceProvider::FLAME, downloadTask, resource->enabled());
     }
-    m_deps.append(std::make_shared<GetModDependenciesTask::PackDependency>(pack, latest_ver.value()));
+    m_deps.append(std::make_shared<GetModDependenciesTask::PackDependency>(pack, latestVer.value()));
 }
 
 void FlameCheckUpdate::collectBlockedMods()
 {
     QStringList addonIds;
     QHash<QString, Resource*> quickSearch;
-    for (auto const& resource : m_blocked.keys()) {
-        auto addonId = resource->metadata()->project_id.toString();
+    for (const auto& resource : m_blocked.keys()) {
+        auto addonId = resource->metadata()->projectId.toString();
         addonIds.append(addonId);
         quickSearch[addonId] = resource;
     }
 
     Task::Ptr projTask;
-    QByteArray* response;
+    QByteArray* response = nullptr;
 
     if (addonIds.isEmpty()) {
         emitSucceeded();
         return;
-    } else if (addonIds.size() == 1) {
-        std::tie(projTask, response) = api.getProject(*addonIds.begin());
+    }
+    if (addonIds.size() == 1) {
+        std::tie(projTask, response) = FlameAPI::get().getProject(*addonIds.begin());
     } else {
-        std::tie(projTask, response) = api.getProjects(addonIds);
+        std::tie(projTask, response) = FlameAPI::get().getProjects(addonIds);
     }
 
     connect(projTask.get(), &Task::succeeded, this, [this, response, addonIds, quickSearch] {
-        QJsonParseError parse_error{};
-        auto doc = QJsonDocument::fromJson(*response, &parse_error);
-        if (parse_error.error != QJsonParseError::NoError) {
-            qWarning() << "Error while parsing JSON response from Flame projects task at" << parse_error.offset
-                       << "reason:" << parse_error.errorString();
+        auto doc = Json::requireObject(*response).and_then([addonIds](const auto& v) -> Result<QJsonArray> {
+            if (addonIds.size() == 1) {
+                TRY_INTO(const auto& obj, Json::requireObject(v, "data", "data"))
+                return { { obj } };
+            }
+            return Json::requireArray(v, "data");
+        });
+        if (!doc) {
+            qWarning() << "Error while parsing JSON response from Flame projects task:" << doc.error();
             qWarning() << *response;
             return;
         }
 
-        try {
-            QJsonArray entries;
-            if (addonIds.size() == 1)
-                entries = { Json::requireObject(Json::requireObject(doc), "data") };
-            else
-                entries = Json::requireArray(Json::requireObject(doc), "data");
+        for (auto entry : doc.value()) {
+            auto parse = [this, &entry, &quickSearch] -> Result<> {
+                TRY_INTO(const auto& entryObj, Json::requireObject(entry))
 
-            for (auto entry : entries) {
-                auto entry_obj = Json::requireObject(entry);
+                TRY_INTO(const auto& idRes, Json::requireInteger(entryObj, "id"))
+                auto id = QString::number(idRes);
 
-                auto id = QString::number(Json::requireInteger(entry_obj, "id"));
+                auto* resource = quickSearch.find(id).value();
 
-                auto resource = quickSearch.find(id).value();
+                setStatus(tr("Parsing API response from CurseForge for '%1'...").arg(resource->name()));
 
                 ModPlatform::IndexedPack pack;
-                try {
-                    setStatus(tr("Parsing API response from CurseForge for '%1'...").arg(resource->name()));
-
-                    FlameMod::loadIndexedPack(pack, entry_obj);
-                    auto recover_url = QString("%1/download/%2").arg(pack.websiteUrl, m_blocked[resource]);
-                    emit checkFailed(resource, tr("Resource has a new update available, but is not downloadable using CurseForge."),
-                                     recover_url);
-                } catch (Json::JsonException& e) {
-                    qDebug() << e.cause();
-                    qDebug() << entries;
-                }
+                TRY(FlameMod::loadIndexedPack(pack, entryObj))
+                auto recoverUrl = QString("%1/download/%2").arg(pack.websiteUrl, m_blocked[resource]);
+                emit checkFailed(resource, tr("Resource has a new update available, but is not downloadable using CurseForge."),
+                                 recoverUrl);
+                return {};
+            };
+            if (auto res = parse(); !res) {
+                qDebug() << res.error();
+                qDebug() << *doc;
+                continue;
             }
-        } catch (Json::JsonException& e) {
-            qDebug() << e.cause();
-            qDebug() << doc;
         }
     });
 

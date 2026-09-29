@@ -8,7 +8,7 @@ class ShaderPackFolderModel : public ResourceFolderModel {
     Q_OBJECT
 
    public:
-    explicit ShaderPackFolderModel(const QDir& dir, BaseInstance* instance, bool is_indexed, bool create_dir, QObject* parent = nullptr)
+    explicit ShaderPackFolderModel(const QDir& dir, MinecraftInstance* instance, bool is_indexed, bool create_dir, QObject* parent = nullptr)
         : ResourceFolderModel(dir, instance, is_indexed, create_dir, parent)
     {}
 
@@ -18,7 +18,7 @@ class ShaderPackFolderModel : public ResourceFolderModel {
 
     [[nodiscard]] Task* createParseTask(Resource& resource) override
     {
-        return new LocalShaderPackParseTask(m_next_resolution_ticket, static_cast<ShaderPack&>(resource));
+        return new LocalShaderPackParseTask(m_nextResolutionTicket, static_cast<ShaderPack&>(resource));
     }
 
     QDir indexDir() const override { return m_dir; }

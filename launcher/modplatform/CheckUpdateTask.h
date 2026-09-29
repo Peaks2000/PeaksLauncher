@@ -14,16 +14,21 @@ class CheckUpdateTask : public Task {
     CheckUpdateTask(QList<Resource*>& resources,
                     std::vector<Version>& mcVersions,
                     QList<ModPlatform::ModLoaderType> loadersList,
-                    ResourceFolderModel* resourceModel)
-        : Task(), m_resources(resources), m_gameVersions(mcVersions), m_loadersList(std::move(loadersList)), m_resourceModel(resourceModel)
+                    ResourceFolderModel* resourceModel,
+                    std::vector<ModPlatform::IndexedVersionType> releaseTypes = {})
+        : m_resources(resources)
+        , m_gameVersions(mcVersions)
+        , m_loadersList(std::move(loadersList))
+        , m_resourceModel(resourceModel)
+        , m_releaseTypes(std::move(releaseTypes))
     {}
 
     struct Update {
         QString name;
-        QString old_hash;
-        QString old_version;
-        QString new_version;
-        std::optional<ModPlatform::IndexedVersionType> new_version_type;
+        QString oldHash;
+        QString oldVersion;
+        QString newVersion;
+        std::optional<ModPlatform::IndexedVersionType> newVersionType;
         QString changelog;
         ModPlatform::ResourceProvider provider;
         shared_qobject_ptr<ResourceDownloadTask> download;
@@ -31,19 +36,19 @@ class CheckUpdateTask : public Task {
 
        public:
         Update(QString name,
-               QString old_h,
-               QString old_v,
-               QString new_v,
-               std::optional<ModPlatform::IndexedVersionType> new_v_type,
+               QString oldH,
+               QString oldV,
+               QString newV,
+               std::optional<ModPlatform::IndexedVersionType> newVType,
                QString changelog,
                ModPlatform::ResourceProvider p,
                shared_qobject_ptr<ResourceDownloadTask> t,
                bool enabled = true)
             : name(std::move(name))
-            , old_hash(std::move(old_h))
-            , old_version(std::move(old_v))
-            , new_version(std::move(new_v))
-            , new_version_type(std::move(new_v_type))
+            , oldHash(std::move(oldH))
+            , oldVersion(std::move(oldV))
+            , newVersion(std::move(newV))
+            , newVersionType(newVType)
             , changelog(std::move(changelog))
             , provider(p)
             , download(std::move(t))
@@ -54,14 +59,11 @@ class CheckUpdateTask : public Task {
     auto getUpdates() -> std::vector<Update>&& { return std::move(m_updates); }
     auto getDependencies() -> QList<std::shared_ptr<GetModDependenciesTask::PackDependency>>&& { return std::move(m_deps); }
 
-   public slots:
-    bool abort() override = 0;
-
    protected slots:
     void executeTask() override = 0;
 
    signals:
-    void checkFailed(Resource* failed, QString reason, QUrl recover_url = {});
+    void checkFailed(Resource* failed, QString reason, QUrl recoverUrl = {});
 
    protected:
     QList<Resource*>& m_resources;
@@ -71,4 +73,5 @@ class CheckUpdateTask : public Task {
 
     std::vector<Update> m_updates;
     QList<std::shared_ptr<GetModDependenciesTask::PackDependency>> m_deps;
+    std::vector<ModPlatform::IndexedVersionType> m_releaseTypes;
 };

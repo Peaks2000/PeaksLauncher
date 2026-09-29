@@ -22,11 +22,14 @@
 
 #include <QPushButton>
 #include <algorithm>
+#include <utility>
 
 #include "Application.h"
+#include "BaseInstance.h"
 #include "ResourceDownloadTask.h"
 
 #include "minecraft/PackProfile.h"
+#include "minecraft/mod/DataPackFolderModel.h"
 #include "minecraft/mod/ModFolderModel.h"
 #include "minecraft/mod/ResourcePackFolderModel.h"
 #include "minecraft/mod/ShaderPackFolderModel.h"
@@ -49,11 +52,20 @@
 
 namespace ResourceDownload {
 
-ResourceDownloadDialog::ResourceDownloadDialog(QWidget* parent, ResourceFolderModel* base_model)
+ResourceDownloadDialog::ResourceDownloadDialog(QWidget* parent,
+                                               ResourceFolderModel* baseModel,
+                                               MinecraftInstance* instance,
+                                               QString resourcesString,
+                                               QString geometrySaveKey,
+                                               bool suppressInitialSearch)
     : QDialog(parent)
-    , m_base_model(base_model)
+    , m_baseModel(baseModel)
     , m_buttons(QDialogButtonBox::Help | QDialogButtonBox::Ok | QDialogButtonBox::Cancel)
-    , m_vertical_layout(this)
+    , m_verticalLayout(this)
+    , m_suppressInitialSearch(suppressInitialSearch)
+    , m_instance(instance)
+    , m_resourcesString(std::move(resourcesString))
+    , m_geometrySaveKey(std::move(geometrySaveKey))
 {
     setObjectName(QStringLiteral("ResourceDownloadDialog"));
 
@@ -61,34 +73,37 @@ ResourceDownloadDialog::ResourceDownloadDialog(QWidget* parent, ResourceFolderMo
 
     setWindowIcon(QIcon::fromTheme("new"));
 
-    // small margins look ugly on macOS on modal windows
-    #ifndef Q_OS_MACOS
+// small margins look ugly on macOS on modal windows
+#ifndef Q_OS_MACOS
     m_buttons.setContentsMargins(0, 0, 6, 6);
-    #endif
+#endif
     // Bonk Qt over its stupid head and make sure it understands which button is the default one...
     // See: https://stackoverflow.com/questions/24556831/qbuttonbox-set-default-button
-    auto OkButton = m_buttons.button(QDialogButtonBox::Ok);
-    OkButton->setEnabled(false);
-    OkButton->setDefault(true);
-    OkButton->setAutoDefault(true);
-    OkButton->setText(tr("Review and confirm"));
-    OkButton->setShortcut(tr("Ctrl+Return"));
+    auto* okButton = m_buttons.button(QDialogButtonBox::Ok);
+    okButton->setEnabled(false);
+    okButton->setDefault(true);
+    okButton->setAutoDefault(true);
+    okButton->setText(tr("Review and confirm"));
+    okButton->setShortcut(tr("Ctrl+Return"));
 
-    auto CancelButton = m_buttons.button(QDialogButtonBox::Cancel);
-    CancelButton->setDefault(false);
-    CancelButton->setAutoDefault(false);
+    auto* cancelButton = m_buttons.button(QDialogButtonBox::Cancel);
+    cancelButton->setDefault(false);
+    cancelButton->setAutoDefault(false);
 
-    auto HelpButton = m_buttons.button(QDialogButtonBox::Help);
-    HelpButton->setDefault(false);
-    HelpButton->setAutoDefault(false);
+    auto* helpButton = m_buttons.button(QDialogButtonBox::Help);
+    helpButton->setDefault(false);
+    helpButton->setAutoDefault(false);
 
     setWindowModality(Qt::WindowModal);
+
+    setWindowTitle(dialogTitle());
 }
 
 void ResourceDownloadDialog::accept()
 {
-    if (!geometrySaveKey().isEmpty())
+    if (!geometrySaveKey().isEmpty()) {
         APPLICATION->settings()->set(geometrySaveKey(), QString::fromUtf8(saveGeometry().toBase64()));
+    }
 
     QDialog::accept();
 }
@@ -108,8 +123,9 @@ void ResourceDownloadDialog::reject()
         }
     }
 
-    if (!geometrySaveKey().isEmpty())
+    if (!geometrySaveKey().isEmpty()) {
         APPLICATION->settings()->set(geometrySaveKey(), QString::fromUtf8(saveGeometry().toBase64()));
+    }
 
     QDialog::reject();
 }
@@ -118,15 +134,15 @@ void ResourceDownloadDialog::reject()
 // won't work with subclasses if we put it in this ctor.
 void ResourceDownloadDialog::initializeContainer()
 {
-    // small margins look ugly on macOS on modal windows
-    #ifndef Q_OS_MACOS
+// small margins look ugly on macOS on modal windows
+#ifndef Q_OS_MACOS
     layout()->setContentsMargins(0, 0, 0, 0);
-    #endif
+#endif
 
     m_container = new PageContainer(this, {}, this);
     m_container->setSizePolicy(QSizePolicy::Policy::Preferred, QSizePolicy::Policy::Expanding);
     m_container->layout()->setContentsMargins(0, 0, 0, 0);
-    m_vertical_layout.addWidget(m_container);
+    m_verticalLayout.addWidget(m_container);
 
     m_container->addButtons(&m_buttons);
 
@@ -135,28 +151,28 @@ void ResourceDownloadDialog::initializeContainer()
 
 void ResourceDownloadDialog::connectButtons()
 {
-    auto OkButton = m_buttons.button(QDialogButtonBox::Ok);
-    OkButton->setToolTip(
+    auto* okButton = m_buttons.button(QDialogButtonBox::Ok);
+    okButton->setToolTip(
         tr("Opens a new popup to review your selected %1 and confirm your selection. Shortcut: Ctrl+Return").arg(resourcesString()));
-    connect(OkButton, &QPushButton::clicked, this, &ResourceDownloadDialog::confirm);
+    connect(okButton, &QPushButton::clicked, this, &ResourceDownloadDialog::confirm);
 
-    auto CancelButton = m_buttons.button(QDialogButtonBox::Cancel);
-    connect(CancelButton, &QPushButton::clicked, this, &ResourceDownloadDialog::reject);
+    auto* cancelButton = m_buttons.button(QDialogButtonBox::Cancel);
+    connect(cancelButton, &QPushButton::clicked, this, &ResourceDownloadDialog::reject);
 
-    auto HelpButton = m_buttons.button(QDialogButtonBox::Help);
-    connect(HelpButton, &QPushButton::clicked, m_container, &PageContainer::help);
+    auto* helpButton = m_buttons.button(QDialogButtonBox::Help);
+    connect(helpButton, &QPushButton::clicked, m_container, &PageContainer::help);
 }
 
 void ResourceDownloadDialog::confirm()
 {
-    auto confirm_dialog = ReviewMessageBox::create(this, tr("Confirm %1 to download").arg(resourcesString()));
-    confirm_dialog->retranslateUi(resourcesString());
+    auto* confirmDialog = ReviewMessageBox::create(this, tr("Confirm %1 to download").arg(resourcesString()));
+    confirmDialog->retranslateUi(resourcesString());
 
     QHash<QString, GetModDependenciesTask::PackDependencyExtraInfo> dependencyExtraInfo;
     QStringList depNames;
     if (auto task = getModDependenciesTask(); task) {
         connect(task.get(), &Task::failed, this,
-                [this](QString reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec(); });
+                [this](const QString& reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec(); });
 
         auto weak = task.toWeakRef();
         connect(task.get(), &Task::succeeded, this, [this, weak]() {
@@ -170,72 +186,112 @@ void ResourceDownloadDialog::confirm()
         });
 
         // Check for updates
-        ProgressDialog progress_dialog(this);
-        progress_dialog.setSkipButton(true, tr("Abort"));
-        progress_dialog.setWindowTitle(tr("Checking for dependencies..."));
-        auto ret = progress_dialog.execWithTask(task.get());
+        ProgressDialog progressDialog(this);
+        progressDialog.setSkipButton(true, tr("Abort"));
+        progressDialog.setWindowTitle(tr("Checking for dependencies..."));
+        auto ret = progressDialog.execWithTask(task.get());
 
         // If the dialog was skipped / some download error happened
         if (ret == QDialog::DialogCode::Rejected) {
             QMetaObject::invokeMethod(this, "reject", Qt::QueuedConnection);
             return;
-        } else {
-            for (auto dep : task->getDependecies()) {
-                addResource(dep->pack, dep->version);
-                depNames << dep->pack->name;
-            }
-            dependencyExtraInfo = task->getExtraInfo();
+        }
+        dependencyExtraInfo = task->getExtraInfo();
+        for (const auto& dep : task->getDependecies()) {
+            auto depExtra = dependencyExtraInfo.value(dep->pack->addonId.toString());
+            addResource(dep->pack, dep->version, "dependency", depExtra.requiredByIds.first());
+            depNames << dep->pack->name;
         }
     }
 
     auto selected = getTasks();
-    std::sort(selected.begin(), selected.end(), [](const DownloadTaskPtr& a, const DownloadTaskPtr& b) {
+    std::ranges::sort(selected, [](const DownloadTaskPtr& a, const DownloadTaskPtr& b) {
         return QString::compare(a->getName(), b->getName(), Qt::CaseInsensitive) < 0;
     });
     for (auto& task : selected) {
         auto extraInfo = dependencyExtraInfo.value(task->getPack()->addonId.toString());
-        confirm_dialog->appendResource({ task->getName(), task->getFilename(), ModPlatform::ProviderCapabilities::name(task->getProvider()),
-                                         extraInfo.required_by, task->getVersion().version_type.toString(), !extraInfo.maybe_installed });
+        confirmDialog->appendResource({
+            .name = task->getName(),
+            .filename = task->getFilename(),
+            .provider = ModPlatform::ProviderCapabilities::name(task->getProvider()),
+            .required_by = extraInfo.requiredByNames,
+            .version_type = task->getVersion().versionType.toString(),
+            .enabled = !extraInfo.maybeInstalled,
+        });
     }
 
-    if (confirm_dialog->exec()) {
-        auto deselected = confirm_dialog->deselectedResources();
-        for (auto page : m_container->getPages()) {
-            auto res = static_cast<ResourcePage*>(page);
-            for (auto name : deselected)
+    if (confirmDialog->exec() != 0) {
+        auto deselected = confirmDialog->deselectedResources();
+        for (auto* page : m_container->getPages()) {
+            auto* res = static_cast<ResourcePage*>(page);
+            for (const auto& name : deselected) {
                 res->removeResourceFromPage(name);
+            }
         }
 
         this->accept();
     } else {
-        for (auto name : depNames)
+        for (const auto& name : depNames) {
             removeResource(name);
+        }
     }
 }
 
 bool ResourceDownloadDialog::selectPage(QString pageId)
 {
-    return m_container->selectPage(pageId);
+    return m_container->selectPage(std::move(pageId));
 }
 
 ResourcePage* ResourceDownloadDialog::selectedPage()
 {
-    ResourcePage* result = dynamic_cast<ResourcePage*>(m_container->selectedPage());
+    auto* result = dynamic_cast<ResourcePage*>(m_container->selectedPage());
     Q_ASSERT(result != nullptr);
     return result;
 }
 
-void ResourceDownloadDialog::addResource(ModPlatform::IndexedPack::Ptr pack, ModPlatform::IndexedVersion& ver)
+void ResourceDownloadDialog::addResource(const ModPlatform::IndexedPack::Ptr& pack,
+                                         ModPlatform::IndexedVersion& ver,
+                                         QString downloadReason,
+                                         QString dependentOn)
 {
     removeResource(pack->name);
-    selectedPage()->addResourceToPage(pack, ver, getBaseModel());
+    auto* model = getBaseModel();
+    auto* instance = dynamic_cast<MinecraftInstance*>(m_instance);
+    if (instance) {
+        ResourceFolderModel* targetModel = nullptr;
+        switch (pack->resourceType) {
+            case ModPlatform::ResourceType::Mod:
+                targetModel = instance->loaderModList();
+                break;
+            case ModPlatform::ResourceType::ResourcePack:
+                targetModel = instance->resourcePackList();
+                break;
+            case ModPlatform::ResourceType::ShaderPack:
+                targetModel = instance->shaderPackList();
+                break;
+            case ModPlatform::ResourceType::DataPack:
+                targetModel = instance->dataPackList();
+                break;
+                // case ModPlatform::ResourceType::World:
+                // targetModel = instance->worldList();
+            case ModPlatform::ResourceType::TexturePack:
+                targetModel = instance->texturePackList();
+                break;
+            default:
+                break;
+        }
+        if (targetModel != nullptr && targetModel->id() != model->id()) {
+            model = targetModel;
+        }
+    }
+    selectedPage()->addResourceToPage(pack, ver, model, std::move(downloadReason), std::move(dependentOn));
     setButtonStatus();
 }
 
-void ResourceDownloadDialog::removeResource(const QString& pack_name)
+void ResourceDownloadDialog::removeResource(const QString& packName)
 {
-    for (auto page : m_container->getPages()) {
-        static_cast<ResourcePage*>(page)->removeResourceFromPage(pack_name);
+    for (auto* page : m_container->getPages()) {
+        static_cast<ResourcePage*>(page)->removeResourceFromPage(packName);
     }
     setButtonStatus();
 }
@@ -243,18 +299,18 @@ void ResourceDownloadDialog::removeResource(const QString& pack_name)
 void ResourceDownloadDialog::setButtonStatus()
 {
     auto selected = false;
-    for (auto page : m_container->getPages()) {
-        auto res = static_cast<ResourcePage*>(page);
+    for (auto* page : m_container->getPages()) {
+        auto* res = static_cast<ResourcePage*>(page);
         selected = selected || res->hasSelectedPacks();
     }
     m_buttons.button(QDialogButtonBox::Ok)->setEnabled(selected);
 }
 
-const QList<ResourceDownloadDialog::DownloadTaskPtr> ResourceDownloadDialog::getTasks()
+QList<ResourceDownloadDialog::DownloadTaskPtr> ResourceDownloadDialog::getTasks()
 {
     QList<DownloadTaskPtr> selected;
-    for (auto page : m_container->getPages()) {
-        auto res = static_cast<ResourcePage*>(page);
+    for (auto* page : m_container->getPages()) {
+        auto* res = static_cast<ResourcePage*>(page);
         selected.append(res->selectedPacks());
     }
     return selected;
@@ -262,124 +318,21 @@ const QList<ResourceDownloadDialog::DownloadTaskPtr> ResourceDownloadDialog::get
 
 void ResourceDownloadDialog::selectedPageChanged(BasePage* previous, BasePage* selected)
 {
-    auto* prev_page = dynamic_cast<ResourcePage*>(previous);
-    if (!prev_page) {
+    // If previous is null (first selection), nothing to sync
+    if (!previous) {
+        return;
+    }
+
+    auto* prevPage = dynamic_cast<ResourcePage*>(previous);
+    if (!prevPage) {
         qCritical() << "Page '" << previous->displayName() << "' in ResourceDownloadDialog is not a ResourcePage!";
         return;
     }
 
     // Same effect as having a global search bar
-    ResourcePage* result = dynamic_cast<ResourcePage*>(selected);
+    auto* result = dynamic_cast<ResourcePage*>(selected);
     Q_ASSERT(result != nullptr);
-    result->setSearchTerm(prev_page->getSearchTerm());
-}
-
-ModDownloadDialog::ModDownloadDialog(QWidget* parent, ModFolderModel* mods, BaseInstance* instance)
-    : ResourceDownloadDialog(parent, mods), m_instance(instance)
-{
-    setWindowTitle(dialogTitle());
-
-    initializeContainer();
-    connectButtons();
-
-    if (!geometrySaveKey().isEmpty())
-        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get(geometrySaveKey()).toString().toUtf8()));
-}
-
-QList<BasePage*> ModDownloadDialog::getPages()
-{
-    QList<BasePage*> pages;
-
-    auto loaders = static_cast<MinecraftInstance*>(m_instance)->getPackProfile()->getSupportedModLoaders().value();
-
-    if (ModrinthAPI::validateModLoaders(loaders))
-        pages.append(ModrinthModPage::create(this, *m_instance));
-    if (APPLICATION->capabilities() & Application::SupportsFlame && FlameAPI::validateModLoaders(loaders))
-        pages.append(FlameModPage::create(this, *m_instance));
-
-    return pages;
-}
-
-GetModDependenciesTask::Ptr ModDownloadDialog::getModDependenciesTask()
-{
-    if (!APPLICATION->settings()->get("ModDependenciesDisabled").toBool()) {  // dependencies
-        if (auto model = dynamic_cast<ModFolderModel*>(getBaseModel()); model) {
-            QList<std::shared_ptr<GetModDependenciesTask::PackDependency>> selectedVers;
-            for (auto& selected : getTasks()) {
-                selectedVers.append(std::make_shared<GetModDependenciesTask::PackDependency>(selected->getPack(), selected->getVersion()));
-            }
-
-            return makeShared<GetModDependenciesTask>(m_instance, model, selectedVers);
-        }
-    }
-    return nullptr;
-}
-
-ResourcePackDownloadDialog::ResourcePackDownloadDialog(QWidget* parent, ResourcePackFolderModel* resource_packs, BaseInstance* instance)
-    : ResourceDownloadDialog(parent, resource_packs), m_instance(instance)
-{
-    setWindowTitle(dialogTitle());
-
-    initializeContainer();
-    connectButtons();
-
-    if (!geometrySaveKey().isEmpty())
-        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get(geometrySaveKey()).toString().toUtf8()));
-}
-
-QList<BasePage*> ResourcePackDownloadDialog::getPages()
-{
-    QList<BasePage*> pages;
-
-    pages.append(ModrinthResourcePackPage::create(this, *m_instance));
-    if (APPLICATION->capabilities() & Application::SupportsFlame)
-        pages.append(FlameResourcePackPage::create(this, *m_instance));
-
-    return pages;
-}
-
-TexturePackDownloadDialog::TexturePackDownloadDialog(QWidget* parent, TexturePackFolderModel* resource_packs, BaseInstance* instance)
-    : ResourceDownloadDialog(parent, resource_packs), m_instance(instance)
-{
-    setWindowTitle(dialogTitle());
-
-    initializeContainer();
-    connectButtons();
-
-    if (!geometrySaveKey().isEmpty())
-        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get(geometrySaveKey()).toString().toUtf8()));
-}
-
-QList<BasePage*> TexturePackDownloadDialog::getPages()
-{
-    QList<BasePage*> pages;
-
-    pages.append(ModrinthTexturePackPage::create(this, *m_instance));
-    if (APPLICATION->capabilities() & Application::SupportsFlame)
-        pages.append(FlameTexturePackPage::create(this, *m_instance));
-
-    return pages;
-}
-
-ShaderPackDownloadDialog::ShaderPackDownloadDialog(QWidget* parent, ShaderPackFolderModel* shaders, BaseInstance* instance)
-    : ResourceDownloadDialog(parent, shaders), m_instance(instance)
-{
-    setWindowTitle(dialogTitle());
-
-    initializeContainer();
-    connectButtons();
-
-    if (!geometrySaveKey().isEmpty())
-        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get(geometrySaveKey()).toString().toUtf8()));
-}
-
-QList<BasePage*> ShaderPackDownloadDialog::getPages()
-{
-    QList<BasePage*> pages;
-    pages.append(ModrinthShaderPackPage::create(this, *m_instance));
-    if (APPLICATION->capabilities() & Application::SupportsFlame)
-        pages.append(FlameShaderPackPage::create(this, *m_instance));
-    return pages;
+    result->setSearchTerm(prevPage->getSearchTerm());
 }
 
 void ResourceDownloadDialog::setResourceMetadata(const std::shared_ptr<Metadata::ModStruct>& meta)
@@ -392,32 +345,158 @@ void ResourceDownloadDialog::setResourceMetadata(const std::shared_ptr<Metadata:
             selectPage(Flame::id());
             break;
     }
+
     setWindowTitle(tr("Change %1 version").arg(meta->name));
     m_container->hidePageList();
     m_buttons.hide();
-    auto page = selectedPage();
-    page->openProject(meta->project_id);
+    auto* page = selectedPage();
+    page->openProject(meta->projectId);
 }
 
-DataPackDownloadDialog::DataPackDownloadDialog(QWidget* parent, DataPackFolderModel* data_packs, BaseInstance* instance)
-    : ResourceDownloadDialog(parent, data_packs), m_instance(instance)
+GetModDependenciesTask::Ptr ResourceDownloadDialog::getModDependenciesTask()
 {
-    setWindowTitle(dialogTitle());
+    if (!APPLICATION->settings()->get("ModDependenciesDisabled").toBool()) {  // dependencies
+        if (auto* model = dynamic_cast<ModFolderModel*>(getBaseModel()); model) {
+            QList<std::shared_ptr<GetModDependenciesTask::PackDependency>> selectedVers;
+            for (auto& selected : getTasks()) {
+                selectedVers.append(std::make_shared<GetModDependenciesTask::PackDependency>(selected->getPack(), selected->getVersion()));
+            }
+
+            return makeShared<GetModDependenciesTask>(m_instance, model, selectedVers);
+        }
+    }
+    return nullptr;
+}
+
+ResourceDownloadDialog* ResourceDownloadDialog::createMod(QWidget* parent,
+                                                          ResourceFolderModel* mods,
+                                                          MinecraftInstance* instance,
+                                                          bool suppressInitialSearch)
+{
+    auto* dialog = new ResourceDownloadDialog(parent, mods, instance, tr("mods"), "ModDownloadGeometry", suppressInitialSearch);
+    QList<BasePage*> pages;
+
+    // need to load all resources for dependency task
+    auto* mInstance = instance;
+    if (mInstance) {
+        for (auto* model : mInstance->resourceLists()) {
+            if (model) {
+                if (model->empty()) {
+                    model->startWatching();
+                }
+            }
+        }
+    }
+
+    auto loaders = instance->getPackProfile()->getSupportedModLoaders().value_or(ModPlatform::ModLoaderTypes(0));
+
+    if (ModrinthAPI::validateModLoaders(loaders)) {
+        auto* page = Modrinth::createModPage(dialog, *instance);
+        page->setSuppressInitialSearch(suppressInitialSearch);
+        pages.append(page);
+    }
+    if (APPLICATION->capabilities() & Application::SupportsFlame && FlameAPI::validateModLoaders(loaders)) {
+        auto* flamePage = Flame::createModPage(dialog, *instance);
+        flamePage->setSuppressInitialSearch(suppressInitialSearch);
+        pages.append(flamePage);
+    }
+    dialog->initPages(pages);
+    return dialog;
+}
+
+ResourceDownloadDialog* ResourceDownloadDialog::createResourcePack(QWidget* parent,
+                                                                   ResourceFolderModel* mods,
+                                                                   MinecraftInstance* instance,
+                                                                   bool suppressInitialSearch)
+{
+    auto* dialog = new ResourceDownloadDialog(parent, mods, instance, tr("resource packs"), "RPDownloadGeometry", suppressInitialSearch);
+    QList<BasePage*> pages;
+
+    auto* page = Modrinth::createResourcePackResourcePage(dialog, *instance);
+    page->setSuppressInitialSearch(suppressInitialSearch);
+    pages.append(page);
+    if (APPLICATION->capabilities() & Application::SupportsFlame) {
+        auto* flamePage = Flame::createResourcePackResourcePage(dialog, *instance);
+        flamePage->setSuppressInitialSearch(suppressInitialSearch);
+        pages.append(flamePage);
+    }
+    dialog->initPages(pages);
+
+    return dialog;
+}
+
+ResourceDownloadDialog* ResourceDownloadDialog::createTexturePack(QWidget* parent,
+                                                                  ResourceFolderModel* mods,
+                                                                  MinecraftInstance* instance,
+                                                                  bool suppressInitialSearch)
+{
+    auto* dialog = new ResourceDownloadDialog(parent, mods, instance, tr("texture packs"), "TPDownloadGeometry", suppressInitialSearch);
+    QList<BasePage*> pages;
+
+    auto* page = Modrinth::createTexturePackResourcePage(dialog, *instance);
+    page->setSuppressInitialSearch(suppressInitialSearch);
+    pages.append(page);
+    if (APPLICATION->capabilities() & Application::SupportsFlame) {
+        auto* flamePage = Flame::createTexturePackResourcePage(dialog, *instance);
+        flamePage->setSuppressInitialSearch(suppressInitialSearch);
+        pages.append(flamePage);
+    }
+    dialog->initPages(pages);
+
+    return dialog;
+}
+
+ResourceDownloadDialog* ResourceDownloadDialog::createShaderPack(QWidget* parent,
+                                                                 ResourceFolderModel* mods,
+                                                                 MinecraftInstance* instance,
+                                                                 bool suppressInitialSearch)
+{
+    auto* dialog = new ResourceDownloadDialog(parent, mods, instance, tr("shader packs"), "ShaderDownloadGeometry", suppressInitialSearch);
+    QList<BasePage*> pages;
+
+    auto* page = Modrinth::createShaderPackResourcePage(dialog, *instance);
+    page->setSuppressInitialSearch(suppressInitialSearch);
+    pages.append(page);
+    if (APPLICATION->capabilities() & Application::SupportsFlame) {
+        auto* flamePage = Flame::createShaderPackResourcePage(dialog, *instance);
+        flamePage->setSuppressInitialSearch(suppressInitialSearch);
+        pages.append(flamePage);
+    }
+    dialog->initPages(pages);
+
+    return dialog;
+}
+
+ResourceDownloadDialog* ResourceDownloadDialog::createDataPack(QWidget* parent,
+                                                               ResourceFolderModel* mods,
+                                                               MinecraftInstance* instance,
+                                                               bool suppressInitialSearch)
+{
+    auto* dialog = new ResourceDownloadDialog(parent, mods, instance, tr("data packs"), "DataPackDownloadGeometry", suppressInitialSearch);
+    QList<BasePage*> pages;
+
+    auto* page = Modrinth::createDataPackResourcePage(dialog, *instance);
+    page->setSuppressInitialSearch(suppressInitialSearch);
+    pages.append(page);
+    if (APPLICATION->capabilities() & Application::SupportsFlame) {
+        auto* flamePage = Flame::createDataPackResourcePage(dialog, *instance);
+        flamePage->setSuppressInitialSearch(suppressInitialSearch);
+        pages.append(flamePage);
+    }
+    dialog->initPages(pages);
+
+    return dialog;
+}
+
+void ResourceDownloadDialog::initPages(QList<BasePage*> pages)
+{
+    m_pages = std::move(pages);
 
     initializeContainer();
     connectButtons();
 
-    if (!geometrySaveKey().isEmpty())
-        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get(geometrySaveKey()).toByteArray()));
+    if (!geometrySaveKey().isEmpty()) {
+        restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get(geometrySaveKey()).toString().toUtf8()));
+    }
 }
-
-QList<BasePage*> DataPackDownloadDialog::getPages()
-{
-    QList<BasePage*> pages;
-    pages.append(ModrinthDataPackPage::create(this, *m_instance));
-    if (APPLICATION->capabilities() & Application::SupportsFlame)
-        pages.append(FlameDataPackPage::create(this, *m_instance));
-    return pages;
-}
-
 }  // namespace ResourceDownload

@@ -15,6 +15,7 @@
 
 #include "Index.h"
 
+#include "Application.h"
 #include "JsonFormat.h"
 #include "QObjectPtr.h"
 #include "VersionList.h"
@@ -96,9 +97,9 @@ Version::Ptr Index::get(const QString& uid, const QString& version)
     return list->getVersion(version);
 }
 
-void Index::parse(const QJsonObject& obj)
+Result<> Index::parse(const QJsonObject& obj)
 {
-    parseIndex(obj, this);
+    return parseIndex(obj, this);
 }
 
 void Index::merge(const std::shared_ptr<Index>& other)
@@ -135,7 +136,7 @@ void Index::connectVersionList(const int row, const VersionList::Ptr& list)
 
 Task::Ptr Index::loadVersion(const QString& uid, const QString& version, Net::Mode mode, bool force)
 {
-    if (mode == Net::Mode::Offline) {
+    if (mode == Net::Mode::Offline || !APPLICATION->settings()->get("MetaRefreshOnLaunch").toBool()) {
         return get(uid, version)->loadTask(mode);
     }
 
