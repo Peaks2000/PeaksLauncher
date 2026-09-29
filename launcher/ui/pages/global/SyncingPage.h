@@ -5,6 +5,7 @@
 #include "ui/pages/BasePage.h"
 
 class QCheckBox;
+class QComboBox;
 
 class SyncingPage : public QWidget, public BasePage {
     Q_OBJECT
@@ -16,7 +17,11 @@ class SyncingPage : public QWidget, public BasePage {
     QIcon icon() const override { return QIcon::fromTheme("refresh"); }
     QString id() const override { return "syncing-settings"; }
     bool apply() override;
+    void openedImpl() override;
 
    private:
+    void refreshInstances();
+
     QCheckBox* m_syncGameOptions;
+    QComboBox* m_sourceInstance;
 };

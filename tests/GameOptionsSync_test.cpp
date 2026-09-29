@@ -25,6 +25,55 @@ class GameOptionsSyncTest : public QObject {
     Q_OBJECT
 
    private slots:
+    void inheritsFromSelectedInstance()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const auto source = root.filePath("source");
+        const auto follower = root.filePath("follower");
+        QVERIFY(QDir().mkpath(source));
+        QVERIFY(QDir().mkpath(follower));
+
+        const auto sourceOptions = QDir(source).filePath("options.txt");
+        const auto followerOptions = QDir(follower).filePath("options.txt");
+        QVERIFY(writeFile(sourceOptions, "music:0.5\n"));
+        QVERIFY(writeFile(followerOptions, "music:1.0\n"));
+
+        GameOptionsSync followerLaunch;
+        QVERIFY(followerLaunch.beforeLaunch(follower, root.path(), source).isEmpty());
+        QCOMPARE(readFile(followerOptions), QByteArray("music:0.5\n"));
+
+        QVERIFY(writeFile(followerOptions, "music:0.2\n"));
+        QVERIFY(followerLaunch.afterExit().isEmpty());
+        QCOMPARE(readFile(sourceOptions), QByteArray("music:0.5\n"));
+        QVERIFY(!QFile::exists(root.filePath("sync/options.txt")));
+
+        GameOptionsSync sourceLaunch;
+        QVERIFY(sourceLaunch.beforeLaunch(source, root.path(), source).isEmpty());
+        QVERIFY(writeFile(sourceOptions, "music:0.7\n"));
+        QVERIFY(sourceLaunch.afterExit().isEmpty());
+
+        GameOptionsSync nextFollowerLaunch;
+        QVERIFY(nextFollowerLaunch.beforeLaunch(follower, root.path(), source).isEmpty());
+        QCOMPARE(readFile(followerOptions), QByteArray("music:0.7\n"));
+    }
+
+    void missingSourceLeavesInstanceUntouched()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const auto follower = root.filePath("follower");
+        const auto source = root.filePath("source");
+        QVERIFY(QDir().mkpath(follower));
+        QVERIFY(QDir().mkpath(source));
+        const auto followerOptions = QDir(follower).filePath("options.txt");
+        QVERIFY(writeFile(followerOptions, "music:1.0\n"));
+
+        GameOptionsSync sync;
+        QVERIFY(!sync.beforeLaunch(follower, root.path(), source).isEmpty());
+        QCOMPARE(readFile(followerOptions), QByteArray("music:1.0\n"));
+    }
+
     void sharesChangesBetweenInstances()
     {
         QTemporaryDir root;

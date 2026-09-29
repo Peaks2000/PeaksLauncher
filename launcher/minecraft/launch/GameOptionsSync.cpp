@@ -41,7 +41,7 @@ bool writeOptions(const QString& path, const QByteArray& contents, QString& erro
 }
 }  // namespace
 
-QString GameOptionsSync::beforeLaunch(const QString& gameRoot, const QString& dataRoot)
+QString GameOptionsSync::beforeLaunch(const QString& gameRoot, const QString& dataRoot, const QString& sourceGameRoot)
 {
     m_localPath = QDir(gameRoot).filePath(QStringLiteral("options.txt"));
     m_sharedPath = QDir(dataRoot).filePath(QStringLiteral("sync/options.txt"));
@@ -49,6 +49,28 @@ QString GameOptionsSync::beforeLaunch(const QString& gameRoot, const QString& da
     m_active = false;
 
     QString error;
+    if (!sourceGameRoot.isEmpty()) {
+        // The chosen instance is authoritative. Other instances receive its file but never publish back to it.
+        if (QDir(sourceGameRoot).absolutePath() == QDir(gameRoot).absolutePath())
+            return {};
+
+        const QString sourcePath = QDir(sourceGameRoot).filePath(QStringLiteral("options.txt"));
+        if (!QFileInfo::exists(sourcePath))
+            return QStringLiteral("The selected source instance does not have an options.txt file yet");
+
+        QByteArray sourceOptions;
+        if (!readOptions(sourcePath, sourceOptions, error))
+            return error;
+        QByteArray localOptions;
+        if (QFileInfo::exists(m_localPath) && !readOptions(m_localPath, localOptions, error))
+            return error;
+        if (!QFileInfo::exists(m_localPath) || localOptions != sourceOptions) {
+            if (!writeOptions(m_localPath, sourceOptions, error))
+                return error;
+        }
+        return {};
+    }
+
     if (QFileInfo::exists(m_sharedPath)) {
         if (!readOptions(m_sharedPath, m_initialOptions, error))
             return error;

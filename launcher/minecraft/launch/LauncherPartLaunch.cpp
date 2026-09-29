@@ -40,6 +40,7 @@
 
 #include "Application.h"
 #include "FileSystem.h"
+#include "InstanceList.h"
 #include "launch/LaunchTask.h"
 #include "minecraft/MinecraftInstance.h"
 #include "settings/SettingsObject.h"
@@ -133,7 +134,15 @@ void LauncherPartLaunch::executeTask()
 
     QString wrapperCommandStr = instance->getWrapperCommand().trimmed();
     if (APPLICATION->settings()->get("SyncGameOptions").toBool()) {
-        const auto error = m_optionsSync.beforeLaunch(instance->gameRoot(), APPLICATION->dataRoot());
+        QString error;
+        const auto sourceId = APPLICATION->settings()->get("SyncGameOptionsSourceInstance").toString();
+        if (sourceId.isEmpty()) {
+            error = m_optionsSync.beforeLaunch(instance->gameRoot(), APPLICATION->dataRoot());
+        } else if (const auto* source = APPLICATION->instances()->getInstanceById(sourceId)) {
+            error = m_optionsSync.beforeLaunch(instance->gameRoot(), APPLICATION->dataRoot(), source->gameRoot());
+        } else {
+            error = tr("The selected source instance could not be found.");
+        }
         if (!error.isEmpty())
             emit logLine(tr("Could not sync Minecraft options: %1").arg(error), MessageLevel::Warning);
     }

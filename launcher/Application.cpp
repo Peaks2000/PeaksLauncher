@@ -829,6 +829,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("EditInstanceOnDoubleClick", false);
         m_settings->registerSetting("SelectedInstance", QString());
         m_settings->registerSetting("SyncGameOptions", false);
+        m_settings->registerSetting("SyncGameOptionsSourceInstance", QString());
 
         // Window state and geometry
         m_settings->registerSetting("MainWindowState", "");
