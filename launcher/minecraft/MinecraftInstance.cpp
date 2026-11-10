@@ -1226,6 +1226,10 @@ LaunchTask* MinecraftInstance::createLaunchTask(AuthSessionPtr session, Minecraf
             process->appendStep(makeShared<TaskStepWrapper>(pptr, t));
         }
     } else {
+        // Offline mode only skips authentication: missing libraries still have to be
+        // downloaded, otherwise the game cannot start. Assets are not updated here so
+        // that an existing install can still be launched without a connection.
+        process->appendStep(makeShared<TaskStepWrapper>(pptr, makeShared<LibrariesTask>(this)));
         process->appendStep(makeShared<EnsureOfflineLibraries>(pptr, this));
     }
 
