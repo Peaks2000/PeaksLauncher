@@ -12,7 +12,7 @@ This project is not endorsed by or affiliated with the Prism Launcher project or
 
 Download the RPM or DEB from [PeaksLauncher releases](https://github.com/Peaks2000/PeaksLauncher/releases). The package installs as `peakslauncher` with its own configuration and data directory, so it can coexist with Prism Launcher.
 
-This fork does not have its own Microsoft or CurseForge API credentials. Those services are unavailable in the published packages until fork-specific credentials are configured. See `CMakeLists.txt` if building your own copy.
+This fork does not have its own Microsoft or CurseForge API credentials. Microsoft sign-in and CurseForge services are unavailable in the published packages until fork-specific credentials are configured. Offline accounts work without these credentials, so you can still play singleplayer and on offline-mode servers. See `CMakeLists.txt` if building your own copy.
 
 ## Building
 
